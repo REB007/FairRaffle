@@ -5,6 +5,7 @@ import { IMessageRecipient } from "@hyperlane-xyz/core/interfaces/IMessageRecipi
 
 contract Whitelister is IMessageRecipient {
     address public owner;
+    address public mailbox; // The Hyperlane Mailbox on this chain
     uint32 public trustedOrigin; // Expected domain ID (e.g. Celo)
     bytes32 public trustedSender; // Expected sender address from Celo (as bytes32)
 
@@ -17,8 +18,9 @@ contract Whitelister is IMessageRecipient {
         _;
     }
 
-    constructor() {
+    constructor(address _mailbox) {
         owner = msg.sender;
+        mailbox = _mailbox;
     }
 
     /**
@@ -31,24 +33,35 @@ contract Whitelister is IMessageRecipient {
         trustedSender = _addressToBytes32(_trustedSender);
     }
 
+    /**
+     * @notice Internal helper to convert an address to bytes32.
+     */
     function _addressToBytes32(address addr) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(addr)));
     }
 
     /**
      * @notice Handles incoming Hyperlane messages.
-     * @dev Verifies the origin and sender, decodes the payload, and whitelists the participant.
+     * @dev Only the configured Hyperlane Mailbox can call this function.
+     * Verifies the message's origin and sender, decodes the payload, and whitelists the participant.
      */
     function handle(
         uint32 origin,
         bytes32 sender,
         bytes calldata message
     ) external override {
+        // Ensure that only the Hyperlane Mailbox calls this function.
+        require(msg.sender == mailbox, "Only mailbox can call");
         require(origin == trustedOrigin, "Invalid origin");
         require(sender == trustedSender, "Invalid sender");
-
-        // Expected message payload is an address to whitelist.
+        
+        // Optionally, enforce expected payload length (should be 32 bytes for an address)
+        require(message.length == 32, "Invalid message payload length");
+        
+        // Decode the address from the payload
         address participant = abi.decode(message, (address));
+        
+        // Whitelist the participant
         whitelisted[participant] = true;
         emit WhitelistUpdated(participant, true);
     }
