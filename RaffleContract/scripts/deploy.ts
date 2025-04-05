@@ -1,26 +1,18 @@
 import { ethers } from "hardhat";
 
 async function main() {
-  const currentTimestampInSeconds = Math.round(Date.now() / 1000);
-  const unlockTime = currentTimestampInSeconds + 60;
+  const [deployer] = await ethers.getSigners();
+  console.log("Deploying contracts with the account:", deployer.address);
 
-  const lockedAmount = ethers.parseEther("0.001");
+  const RaffleManager = await ethers.getContractFactory("RaffleManager");
+  // Set the whitelister address; here we're using the deployer's address
+  const whitelister = deployer.address;
+  const raffleManager = await RaffleManager.deploy(whitelister);
 
-  const lock = await ethers.deployContract("Lock", [unlockTime], {
-    value: lockedAmount,
-  });
-
-  await lock.waitForDeployment();
-
-  console.log(
-    `Lock with ${ethers.formatEther(
-      lockedAmount
-    )}ETH and unlock timestamp ${unlockTime} deployed to ${lock.target}`
-  );
+  await raffleManager.deployed();
+  console.log("RaffleManager deployed to:", raffleManager.address);
 }
 
-// We recommend this pattern to be able to use async/await everywhere
-// and properly handle errors.
 main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
