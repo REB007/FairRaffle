@@ -9,8 +9,8 @@ async function main() {
   const whitelister = deployer.address;
   const raffleManager = await RaffleManager.deploy(whitelister);
 
-  await raffleManager.deployed();
-  console.log("RaffleManager deployed to:", raffleManager.address);
+  await raffleManager.waitForDeployment();
+  console.log("RaffleManager deployed to:", await raffleManager.getAddress());
 }
 
 main().catch((error) => {

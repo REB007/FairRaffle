@@ -1,32 +1,23 @@
 // SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.19;
 
-import {CadenceRandomConsumer} from "@onflow/flow-sol-utils/src/random/CadenceRandomConsumer.sol";
+import { CadenceRandomConsumer } from "@onflow/flow-sol-utils/src/random/CadenceRandomConsumer.sol";
 
 interface IERC721 {
     function safeTransferFrom(address from, address to, uint256 tokenId) external;
 }
 
+// Minimal interface for our Whitelisted contract.
+interface IWhitelisted {
+    function isWhitelisted(address participant) external view returns (bool);
+}
+
 contract RaffleManager is CadenceRandomConsumer {
     address public owner;
-    address public whitelister;
     uint256 public raffleCount;
-    mapping(address => bool) public whitelisted;
 
-    event OwnerChanged(address indexed oldOwner, address indexed newOwner);
-    event WhitelisterChanged(address indexed oldWhitelister, address indexed newWhitelister);
-    event WhitelistUpdated(address indexed participant, bool status);
-    event RaffleCreated(
-        uint256 indexed raffleId,
-        address indexed organizer,
-        uint256 maxParticipants,
-        uint256 deadline,
-        address nftAddress,
-        uint256 tokenId,
-        uint256 requestId
-    );
-    event Participated(uint256 indexed raffleId, address indexed participant);
-    event RaffleTriggered(uint256 indexed raffleId, address indexed winner, uint256 randomIndex);
+    // Reference to the Whitelisted contract.
+    IWhitelisted public whitelistContract;
 
     struct Raffle {
         address organizer;
@@ -40,50 +31,47 @@ contract RaffleManager is CadenceRandomConsumer {
         bool prizeAwarded;
         uint256 requestId;
     }
-
+    
     mapping(uint256 => Raffle) private raffles;
-
+    
+    event OwnerChanged(address indexed oldOwner, address indexed newOwner);
+    event RaffleCreated(
+        uint256 indexed raffleId,
+        address indexed organizer,
+        uint256 maxParticipants,
+        uint256 deadline,
+        address nftAddress,
+        uint256 tokenId,
+        uint256 requestId
+    );
+    event Participated(uint256 indexed raffleId, address indexed participant);
+    event RaffleTriggered(uint256 indexed raffleId, address indexed winner, uint256 randomIndex);
+    
     modifier onlyOwner() {
         require(msg.sender == owner, "Not owner");
         _;
     }
-
+    
     modifier raffleExists(uint256 raffleId) {
         require(raffleId < raffleCount, "Raffle does not exist");
         _;
     }
-
-    constructor(address _whitelister) {
+    
+    constructor(address _whitelistContract) {
         owner = msg.sender;
-        whitelister = _whitelister;
         raffleCount = 0;
+        whitelistContract = IWhitelisted(_whitelistContract);
     }
-
-    function setWhitelister(address _whitelister) external onlyOwner {
-        emit WhitelisterChanged(whitelister, _whitelister);
-        whitelister = _whitelister;
-    }
-
+    
     function setOwner(address _owner) external onlyOwner {
         emit OwnerChanged(owner, _owner);
         owner = _owner;
     }
-
-    function setWhitelisted(address participant, bool status) external {
-        require(msg.sender == whitelister, "Not whitelister");
-        whitelisted[participant] = status;
-        emit WhitelistUpdated(participant, status);
-    }
-
-    function isWhitelisted(address participant) external view returns (bool) {
-        return whitelisted[participant];
-    }
-
-    function addWhitelist(address participant) external onlyOwner {
-        whitelisted[participant] = true;
-        emit WhitelistUpdated(participant, true);
-    }
-
+    
+    /**
+     * @notice Creates a new raffle.
+     * Transfers the NFT from the organizer to the contract.
+     */
     function createRaffle(
         uint256 _maxParticipants,
         uint256 _deadline,
@@ -104,19 +92,29 @@ contract RaffleManager is CadenceRandomConsumer {
         emit RaffleCreated(raffleId, msg.sender, _maxParticipants, _deadline, _nftAddress, _tokenId, r.requestId);
         return raffleId;
     }
-
+    
+    /**
+     * @notice Allows a whitelisted user to participate in a raffle.
+     */
     function participate(uint256 raffleId) external raffleExists(raffleId) {
-        require(whitelisted[msg.sender], "Not whitelisted");
+        // Check whitelisting via the Whitelisted contract.
+        require(whitelistContract.isWhitelisted(msg.sender), "Not whitelisted");
+        
         Raffle storage r = raffles[raffleId];
         require(block.timestamp < r.deadline, "Deadline passed");
         require(r.participants.length < r.maxParticipants, "Max participants reached");
+        
+        // Prevent duplicate entries.
         for (uint256 i = 0; i < r.participants.length; i++) {
             require(r.participants[i] != msg.sender, "Already participated");
         }
         r.participants.push(msg.sender);
         emit Participated(raffleId, msg.sender);
     }
-
+    
+    /**
+     * @notice Triggers a raffle to pick a winner.
+     */
     function triggerRaffle(uint256 raffleId) external onlyOwner raffleExists(raffleId) {
         Raffle storage r = raffles[raffleId];
         require(block.timestamp >= r.deadline, "Deadline not reached");
@@ -129,11 +127,11 @@ contract RaffleManager is CadenceRandomConsumer {
         IERC721(r.nftAddress).safeTransferFrom(address(this), r.winner, r.tokenId);
         emit RaffleTriggered(raffleId, r.winner, randomIndex);
     }
-
+    
     function getParticipants(uint256 raffleId) external view raffleExists(raffleId) returns (address[] memory) {
         return raffles[raffleId].participants;
     }
-
+    
     function getRaffle(uint256 raffleId)
         external
         view
@@ -153,7 +151,8 @@ contract RaffleManager is CadenceRandomConsumer {
         Raffle storage r = raffles[raffleId];
         return (r.organizer, r.maxParticipants, r.deadline, r.nftAddress, r.tokenId, r.triggered, r.winner, r.prizeAwarded, r.requestId);
     }
-
+    
+    // ERC721 Receiver implementation.
     function onERC721Received(
         address,
         address,
