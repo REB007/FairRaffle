@@ -21,6 +21,11 @@ const config: HardhatUserConfig = {
       chainId: parseInt(FLOW_MAINNET_CHAIN_ID),
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
     },
+    celo:{
+      url: "https://alfajores-forno.celo-testnet.org",
+      chainId: 44787,
+      accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
+    }
   },
 };
 
